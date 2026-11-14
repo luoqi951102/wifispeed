@@ -1,0 +1,16 @@
+# build artifacts
+/wifispeed
+/dist/
+
+# local tooling / editor
+.claude/
+.DS_Store
+*.log
+
+# marketing assets (kept out of the code repo)
+/xiaohongshu/
+
+# runtime / secrets
+/data/
+.env
+*.local
