@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wifispeed · Wi-Fi / 宽带测速</title>
+<style>
+  :root{
+    --bg:#060a0f; --bg2:#0a1119;
+    --card:#111923; --card2:#0d141d;
+    --line:#22303f; --line2:#2c3d51;
+    --txt:#e6eef8; --dim:#8a9bb0; --muted:#5e7186;
+    --cyan:#38e1ff; --mint:#5be9a0; --violet:#a78bfa;
+    --amber:#f5c451; --red:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(900px 620px at 10% -12%, rgba(56,225,255,.10), transparent 60%),
+      radial-gradient(760px 560px at 102% -4%, rgba(167,139,250,.08), transparent 58%),
+      linear-gradient(180deg,#080d13 0%, var(--bg) 60%);
+    color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    padding:26px 16px 34px;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;opacity:.03;z-index:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  header,main,footer{width:100%;max-width:1040px;position:relative;z-index:1}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px}
+  .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#123b4a,#0d2129);border:1px solid #2a4c5c;display:grid;place-items:center;box-shadow:0 6px 18px rgba(56,225,255,.12)}
+  .mark svg{width:18px;height:18px}
+  h1{font-size:24px;font-weight:700;letter-spacing:.2px;line-height:1.1}
+  h1 b{color:var(--cyan);font-weight:700}
+  .sub{color:var(--muted);font-size:11.5px;margin-top:4px;letter-spacing:.3px}
+  .head-right{display:flex;align-items:center;gap:10px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;
+    background:rgba(56,225,255,.07);border:1px solid rgba(56,225,255,.18);color:#b9ecfa;font-size:12px;white-space:nowrap}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);flex:none}
+  .chip.running .dot{animation:pulse 1.3s ease-in-out infinite}
+  .chip.done{background:rgba(91,233,160,.07);border-color:rgba(91,233,160,.22);color:#c6f7dd}
+  .chip.done .dot{background:var(--mint);box-shadow:0 0 10px var(--mint)}
+  .ver{color:#3f5064;font-size:11px;font-family:var(--mono)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+
+  main{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:16px;align-items:start}
+  @media(max-width:920px){main{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .card{
+    background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0) 55%),var(--card);
+    border:1px solid var(--line);border-radius:18px;padding:18px;
+    box-shadow:0 18px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+  .eyebrow{font-size:11px;letter-spacing:1.5px;color:var(--muted);font-weight:600}
+
+  /* ── Hero / gauge ── */
+  .hero{display:flex;flex-direction:column;align-items:center;padding:18px 18px 22px}
+  .hero-top{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:2px}
+  .node{font-family:var(--mono);font-size:11px;color:var(--dim);max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .gauge-wrap{position:relative;width:100%;max-width:430px;aspect-ratio:720/620;margin:2px auto 0}
+  canvas{width:100%;height:100%;display:block}
+  .readout{position:absolute;left:0;right:0;top:39%;text-align:center;pointer-events:none}
+  .readout .val{font-family:var(--mono);font-size:clamp(42px,9.2vw,58px);font-weight:600;
+    line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-1px;text-shadow:0 0 28px rgba(56,225,255,.18)}
+  .readout .val.idle{color:var(--dim);font-size:clamp(24px,4.6vw,32px);letter-spacing:.5px;padding-top:10px;text-shadow:none}
+  .readout .unit{color:var(--muted);font-size:12px;letter-spacing:2px;margin-top:6px}
+  #phaseLabel{color:var(--dim);font-size:12.5px;text-align:center;margin-top:10px;min-height:18px}
+  #peakLabel{color:var(--muted);font-size:11px;font-family:var(--mono);text-align:center;min-height:15px;margin-top:4px}
+  .steps{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px;margin:14px 0 2px}
+  .step{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px;padding:0 8px;transition:color .2s}
+  .step .sdot{width:7px;height:7px;border-radius:50%;background:#2a3646;box-shadow:inset 0 0 0 1px #3a4a5e;transition:all .2s}
+  .step:not(:last-child)::after{content:"";width:22px;height:1px;background:#243040;margin-left:6px}
+  .step.active{color:#cdf4ff}
+  .step.active .sdot{background:var(--cyan);box-shadow:0 0 12px var(--cyan);animation:pulse 1.3s ease-in-out infinite}
+  .step.done{color:var(--mint)}
+  .step.done .sdot{background:var(--mint);box-shadow:0 0 8px rgba(91,233,160,.6)}
+  .step.error{color:var(--red)}
+  .step.error .sdot{background:var(--red);box-shadow:0 0 10px var(--red)}
+  @media(max-width:520px){.step:not(:last-child)::after{width:10px}}
+  #startBtn{
+    margin-top:16px;width:100%;max-width:300px;padding:14px 20px;border:0;border-radius:999px;
+    font-size:16px;font-weight:650;letter-spacing:.4px;color:#032229;cursor:pointer;
+    background:linear-gradient(135deg,var(--cyan),var(--mint));
+    box-shadow:0 12px 30px rgba(56,225,255,.20), inset 0 1px 0 rgba(255,255,255,.55);
+    transition:transform .15s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  #startBtn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 16px 36px rgba(56,225,255,.28), inset 0 1px 0 rgba(255,255,255,.55)}
+  #startBtn:active:not(:disabled){transform:translateY(1px) scale(.99)}
+  #startBtn:disabled{filter:saturate(.35) brightness(.78);cursor:default;box-shadow:none}
+  #startBtn:focus-visible{outline:2px solid rgba(56,225,255,.75);outline-offset:3px}
+
+  /* ── Stats ── */
+  .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:640px){.stats{grid-template-columns:1fr}}
+  .stat{background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,0)),var(--card2);
+    border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:7px;min-width:0}
+  .stat .lab{font-size:10.5px;letter-spacing:1.3px;color:var(--muted);font-weight:600}
+  .stat .num{font-family:var(--mono);font-size:clamp(20px,2.9vw,28px);font-weight:600;line-height:1;
+    font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--txt);min-height:28px}
+  .stat .num small{font-family:-apple-system,"PingFang SC",sans-serif;font-size:11px;color:var(--muted);font-weight:400;margin-left:4px}
+  .stat .meta{font-size:10.5px;color:#4f6276;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:13px;font-family:var(--mono)}
+  .stat.done .num{color:var(--mint)}
+  .stat .num.bad{color:var(--red);font-size:16px;min-height:28px}
+  .verdict{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;
+    padding:11px 14px;border-radius:12px;background:rgba(56,225,255,.05);border:1px solid rgba(56,225,255,.12);font-size:12.5px;color:#b9d9e8}
+  .verdict .lab{color:var(--muted);font-size:11px;letter-spacing:1.2px;flex:none}
+  .verdict span:last-child{text-align:right}
+
+  /* ── Wi-Fi ── */
+  .wifi{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .ssid{font-size:17px;font-weight:600;letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:250px}
+  .chips{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .chip-sm{font-size:10.5px;padding:3px 9px;border-radius:999px;background:#16202b;border:1px solid var(--line);color:var(--dim);font-family:var(--mono)}
+  .signal{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600}
+  .badge.ok{background:rgba(91,233,160,.12);color:var(--mint);border:1px solid rgba(91,233,160,.22)}
+  .badge.mid{background:rgba(245,196,81,.10);color:var(--amber);border:1px solid rgba(245,196,81,.22)}
+  .badge.bad{background:rgba(255,107,107,.10);color:var(--red);border:1px solid rgba(255,107,107,.22)}
+  .badge.na{background:#161f2a;color:var(--muted);border:1px solid var(--line)}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:22px}
+  .bars i{width:4px;border-radius:2px;background:#2a3646;transition:background .25s}
+  .bars i:nth-child(1){height:6px}.bars i:nth-child(2){height:10px}
+  .bars i:nth-child(3){height:14px}.bars i:nth-child(4){height:18px}.bars i:nth-child(5){height:22px}
+  .bars i.on{background:linear-gradient(180deg,var(--cyan),var(--mint));box-shadow:0 0 8px rgba(56,225,255,.35)}
+  .sigtext{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
+
+  /* ── Log ── */
+  #log{font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--dim);max-height:196px;overflow-y:auto;padding-right:4px}
+  #log::-webkit-scrollbar{width:6px}
+  #log::-webkit-scrollbar-thumb{background:#243244;border-radius:3px}
+  #log .t{color:#42536a;margin-right:9px}
+  #log .warn{color:var(--amber)}
+  #log .err{color:var(--red)}
+  #log .ok{color:var(--mint)}
+  footer{margin-top:16px;color:#3a4a5c;font-size:11px;text-align:center;line-height:1.7}
+  @media(prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 17.5a11 11 0 0 1 16 0" stroke="#38e1ff" stroke-width="2" stroke-linecap="round"/><path d="M7.5 14a7 7 0 0 1 9 0" stroke="#5be9a0" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="19" r="1.8" fill="#38e1ff"/></svg>
+    </div>
+    <div>
+      <h1>wifi<b>speed</b></h1>
+      <div class="sub">Wi-Fi / 宽带测速 · speedtest.net 协议 · 多连接并行</div>
+    </div>
+  </div>
+  <div class="head-right">
+    <span class="chip" id="statusChip"><i class="dot"></i><span id="statusText">就绪</span></span>
+    <span class="ver">v1.1</span>
+  </div>
+</header>
+
+<main>
+  <section class="card hero" aria-label="实时速率">
+    <div class="hero-top">
+      <span class="eyebrow">实时速率</span>
+      <span class="node" id="nodeLine">节点：自动选择</span>
+    </div>
+    <div class="gauge-wrap">
+      <canvas id="gauge" width="720" height="620" aria-hidden="true"></canvas>
+      <div class="readout">
+        <div class="val idle" id="bigVal">就绪</div>
+        <div class="unit" id="bigUnit">Mbps</div>
+      </div>
+    </div>
+    <div id="peakLabel" aria-live="polite"></div>
+    <div class="steps" id="phasebar" aria-label="测试阶段">
+      <div class="step" data-step="0"><span class="sdot"></span><span>节点</span></div>
+      <div class="step" data-step="1"><span class="sdot"></span><span>延迟</span></div>
+      <div class="step" data-step="2"><span class="sdot"></span><span>下行</span></div>
+      <div class="step" data-step="3"><span class="sdot"></span><span>上行</span></div>
+    </div>
+    <div id="phaseLabel" aria-live="polite">点击开始测速</div>
+    <button id="startBtn">开始测速</button>
+  </section>
+
+  <div class="col">
+    <section class="card" aria-label="测试结果">
+      <div class="card-head"><span class="eyebrow">测试结果</span><span class="node" id="resultHint"></span></div>
+      <div class="stats">
+        <div class="stat" id="rowLat">
+          <span class="lab">延迟 LATENCY</span>
+          <span class="num" id="vLat">—</span>
+          <span class="meta" id="mLat">抖动 — · 丢包 —</span>
+        </div>
+        <div class="stat" id="rowDown">
+          <span class="lab">下行 DOWNLOAD</span>
+          <span class="num" id="vDown">—</span>
+          <span class="meta" id="mDown">峰值 —</span>
+        </div>
+        <div class="stat" id="rowUp">
+          <span class="lab">上行 UPLOAD</span>
+          <span class="num" id="vUp">—</span>
+          <span class="meta" id="mUp">峰值 —</span>
+        </div>
+      </div>
+      <div class="verdict" id="rowVerdict">
+        <span class="lab">千兆达成度</span><span id="vVerdict">—</span>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Wi-Fi 链路">
+      <div class="card-head"><span class="eyebrow">WI-FI 链路</span><span id="wfState" class="badge na">读取中…</span></div>
+      <div class="wifi">
+        <div style="min-width:0">
+          <div class="ssid" id="wfSsid">—</div>
+          <div class="chips">
+            <span class="chip-sm" id="wfPhy">—</span>
+            <span class="chip-sm" id="wfChan">—</span>
+            <span class="chip-sm" id="wfSec">—</span>
+          </div>
+        </div>
+        <div class="signal">
+          <div class="bars" id="wfBars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="sigtext" id="wfSig">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="过程日志">
+      <div class="card-head"><span class="eyebrow">过程日志</span><span class="node" id="logHint"></span></div>
+      <div id="log" role="log" aria-live="polite"></div>
+    </section>
+  </div>
+</main>
+
+<footer>wifispeed · 自研测速 · 方法论: sivel/speedtest-cli ★14k · librespeed/speedtest ★15.3k · openspeedtest/Speed-Test</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('gauge'), ctx = cv.getContext('2d');
+
+/* ───── 仪表盘 ───── */
+const MAX = 1000, A0 = Math.PI*0.75, A1 = Math.PI*2.25;
+const UI_FONT = getComputedStyle(document.body).fontFamily;
+let shown = 0, target = 0, animating = false, arcColor = '#38e1ff';
+let lastDown = 0, lastUp = 0, curPhase = null;
+
+function angleFor(v){
+  const t = Math.max(0, Math.min(v, MAX)) / MAX;
+  return A0 + (A1-A0)*t;
+}
+function draw(){
+  const W = 720, H = 620, cx = 360, cy = 400, R = 278;
+  ctx.clearRect(0,0,W,H);
+
+  // 背景弧
+  ctx.lineWidth = 42; ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#18222e';
+  ctx.beginPath(); ctx.arc(cx,cy,R,A0,A1); ctx.stroke();
+
+  // 刻度：每 50 一小格，每 250 一大格
+  for (let v=0; v<=MAX; v+=50){
+    const a = angleFor(v), major = v % 250 === 0;
+    const r1 = R-28, r2 = R-(major?50:42);
+    ctx.lineWidth = major ? 3 : 1.5;
+    ctx.strokeStyle = major ? '#44566c' : '#2a3949';
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+    ctx.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
+    ctx.stroke();
+  }
+
+  // 数值弧
+  const frac = Math.max(0, Math.min(shown, MAX)) / MAX;
+  if (frac > 0.002){
+    const grad = ctx.createLinearGradient(80,0,640,0);
+    grad.addColorStop(0, arcColor); grad.addColorStop(1, '#5be9a0');
+    ctx.lineWidth = 42;
+    ctx.strokeStyle = grad;
+    ctx.shadowColor = arcColor; ctx.shadowBlur = 24;
+    ctx.beginPath(); ctx.arc(cx,cy,R,A0,A0+(A1-A0)*frac); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // 刻度数字
+  ctx.fillStyle = '#5b6f85'; ctx.font = '22px ' + UI_FONT;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let v=0; v<=MAX; v+=250){
+    const a = angleFor(v), r = R-80;
+    ctx.fillText(String(v), cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+  }
+
+  // 当前值标记：弧线末端的光点（避免指针穿过中间读数）
+  const tip = angleFor(shown);
+  const tx = cx + Math.cos(tip) * R, ty = cy + Math.sin(tip) * R;
+  ctx.beginPath(); ctx.arc(tx, ty, 13, 0, Math.PI*2);
+  ctx.fillStyle = frac > 0.002 ? '#eafcff' : '#4a5c70';
+  ctx.shadowColor = arcColor; ctx.shadowBlur = frac > 0.002 ? 26 : 0;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI*2);
+  ctx.fillStyle = frac > 0.002 ? arcColor : '#4a5c70'; ctx.fill();
+}
+
+function tick(){
+  shown += (target - shown) * 0.14;
+  if (Math.abs(target - shown) < 0.4){ shown = target; animating = false; }
+  draw();
+  updateBig();
+  if (animating) requestAnimationFrame(tick);
+}
+function setTarget(v, color){
+  target = v;
+  if (color) arcColor = color;
+  if (!animating){ animating = true; requestAnimationFrame(tick); }
+}
+function updateBig(){
+  const el = $('bigVal');
+  if (el.classList.contains('idle')) return;
+  el.textContent = shown >= 100 ? shown.toFixed(0) : shown.toFixed(1);
+}
+function bigIdle(text){
+  const el = $('bigVal');
+  el.classList.add('idle'); el.textContent = text;
+}
+function bigActive(){ $('bigVal').classList.remove('idle'); }
+
+/* ───── 状态 / 阶段 ───── */
+function setChip(text, cls){
+  $('statusText').textContent = text;
+  const chip = $('statusChip');
+  chip.classList.remove('running','done');
+  if (cls) chip.classList.add(cls);
+}
+function stepEl(i){ return document.querySelector('#phasebar .step[data-step="'+i+'"]'); }
+function setStep(i, state){
+  const el = stepEl(i);
+  if (!el) return;
+  el.classList.remove('active','done','error');
+  if (state) el.classList.add(state);
+}
+function stepsDoneThrough(i){
+  for (let j=0; j<=i; j++){
+    const el = stepEl(j);
+    if (el && !el.classList.contains('error')) { el.classList.remove('active'); el.classList.add('done'); }
+  }
+}
+function currentStepIndex(){
+  if (curPhase === 'download') return 2;
+  if (curPhase === 'upload') return 3;
+  return 1;
+}
+
+/* ───── 日志 ───── */
+function log(msg, cls){
+  const box = $('log');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  const t = new Date().toTimeString().slice(3,8);
+  div.innerHTML = '<span class="t">'+t+'</span>'+msg;
+  box.appendChild(div);
+  while (box.children.length > 80) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+/* ───── Wi-Fi 卡片 ───── */
+function wifiSsid(w){
+  if (w.ssid_redacted) return '已隐藏（需授予定位权限）';
+  return w.ssid || '—';
+}
+function wifiSsidTitle(w){
+  return w.ssid_redacted
+    ? 'macOS 出于隐私保护隐藏网络名：系统设置 → 隐私与安全性 → 定位服务 → 为终端授权'
+    : '';
+}
+function signalBars(snr){
+  if (snr >= 35) return 5;
+  if (snr >= 28) return 4;
+  if (snr >= 20) return 3;
+  if (snr >= 12) return 2;
+  return 1;
+}
+function fillWifi(w){
+  const state = $('wfState');
+  const q = w.snr_db >= 35 ? '优秀' : w.snr_db >= 25 ? '良好' : w.snr_db >= 18 ? '一般' : '较差';
+  state.className = 'badge ' + (w.snr_db >= 25 ? 'ok' : w.snr_db >= 18 ? 'mid' : 'bad');
+  state.textContent = '已连接 · ' + q;
+  $('wfSsid').textContent = wifiSsid(w);
+  $('wfSsid').title = wifiSsidTitle(w);
+  $('wfPhy').textContent = w.phy || '—';
+  $('wfChan').textContent = w.channel || '—';
+  $('wfSec').textContent = w.security || '—';
+  $('wfSig').textContent = w.signal_dbm + ' / ' + w.noise_dbm + ' dBm · SNR ' + w.snr_db + ' dB';
+  const n = signalBars(w.snr_db);
+  [...$('wfBars').children].forEach((b,i)=>b.classList.toggle('on', i < n));
+}
+async function loadWifi(){
+  try{
+    const r = await fetch('/api/wifi'); const w = await r.json();
+    if (w.error){ $('wfState').className='badge na'; $('wfState').textContent='未连接'; return; }
+    fillWifi(w);
+  }catch(e){ $('wfState').className='badge na'; $('wfState').textContent='读取失败'; }
+}
+
+/* ───── 结果行 ───── */
+function setRow(id, html){
+  const row = $(id), val = $(id.replace('row','v'));
+  row.classList.add('done');
+  val.className = 'num'; val.title = ''; val.innerHTML = html;
+}
+function setRowFail(id, msg){
+  const row = $(id), val = $(id.replace('row','v'));
+  row.classList.remove('done');
+  val.className = 'num bad'; val.textContent = '失败'; val.title = msg || '';
+}
+
+/* ───── 事件流 ───── */
+function resetUI(){
+  ['vLat','vDown','vUp'].forEach(id=>{ const el=$(id); el.textContent='—'; el.className='num'; el.title=''; });
+  ['mLat','mDown','mUp'].forEach(id=>$(id).textContent = id==='mLat' ? '抖动 — · 丢包 —' : '峰值 —');
+  $('vVerdict').textContent='—'; $('rowVerdict').classList.remove('done');
+  ['rowLat','rowDown','rowUp'].forEach(id=>$(id).classList.remove('done'));
+  for (let i=0;i<4;i++) setStep(i,'');
+  $('log').innerHTML=''; $('peakLabel').textContent=''; $('resultHint').textContent='';
+  $('nodeLine').textContent='节点：自动选择'; $('nodeLine').title='';
+  lastDown=0; lastUp=0; curPhase=null;
+  shown=0; target=0; draw(); bigIdle('…');
+  setChip('测试中','running');
+}
+function handle(ev){
+  switch(ev.type){
+    case 'banner': break;
+    case 'wifi': fillWifi(ev.wifi); log('Wi-Fi: '+wifiSsid(ev.wifi)+' · '+ev.wifi.channel+' · SNR '+ev.wifi.snr_db+' dB'); break;
+    case 'wifi-error': log('Wi-Fi: '+ev.error, 'warn'); break;
+    case 'status':
+      if (ev.tag === '服务器') setStep(0,'active');
+      if (ev.tag === '延迟') setStep(1,'active');
+      log('['+ev.tag+'] '+ev.text);
+      break;
+    case 'server': {
+      const host = String(ev.text).split(' ').pop();
+      $('nodeLine').textContent = '节点：'+host;
+      $('nodeLine').title = ev.text;
+      $('resultHint').textContent = host;
+      stepsDoneThrough(0);
+      log('节点: '+ev.text, 'ok');
+      break;
+    }
+    case 'latency': {
+      const s = ev.stats;
+      setRow('rowLat', s.avg_ms.toFixed(1)+'<small>ms</small>');
+      $('mLat').textContent = '抖动 '+s.jitter_ms.toFixed(1)+'ms · 丢包 '+Math.round(s.loss_pct)+'%';
+      stepsDoneThrough(1);
+      log('延迟 '+s.avg_ms.toFixed(1)+'ms · 抖动 '+s.jitter_ms.toFixed(1)+'ms · 丢包 '+Math.round(s.loss_pct)+'%');
+      break;
+    }
+    case 'phase':
+      curPhase = ev.phase;
+      bigActive();
+      if (ev.phase === 'download'){ stepsDoneThrough(1); setStep(2,'active'); }
+      else { stepsDoneThrough(2); setStep(3,'active'); }
+      $('phaseLabel').textContent = (ev.phase==='download'?'下行 ':'上行 ')+ev.text;
+      if (ev.phase === 'download') $('peakLabel').textContent = '';
+      log('['+(ev.phase==='download'?'下载':'上传')+'] '+ev.text);
+      break;
+    case 'progress':
+      bigActive();
+      setTarget(ev.mbps, ev.phase==='upload' ? '#a78bfa' : '#38e1ff');
+      break;
+    case 'result': {
+      const r = ev.result, down = ev.phase==='download';
+      if (down){
+        lastDown = r.mbps;
+        setTarget(r.mbps, '#5be9a0');
+        setRow('rowDown', r.mbps.toFixed(1)+'<small>Mbps</small>');
+        $('mDown').textContent = '峰值 '+r.peak_mbps.toFixed(1)+' · '+r.source;
+        $('peakLabel').textContent = '峰值 '+r.peak_mbps.toFixed(1)+' Mbps · '+r.mb.toFixed(0)+' MB / '+r.seconds.toFixed(0)+'s · '+r.source;
+        stepsDoneThrough(2);
+        log('下行 '+r.mbps.toFixed(1)+' Mbps（峰值 '+r.peak_mbps.toFixed(1)+' · '+r.source+'）', 'ok');
+      } else {
+        lastUp = r.mbps;
+        setTarget(r.mbps, '#a78bfa');
+        setRow('rowUp', r.mbps.toFixed(1)+'<small>Mbps</small>');
+        $('mUp').textContent = '峰值 '+r.peak_mbps.toFixed(1);
+        stepsDoneThrough(3);
+        log('上行 '+r.mbps.toFixed(1)+' Mbps（峰值 '+r.peak_mbps.toFixed(1)+' · '+r.mb.toFixed(0)+' MB / '+r.seconds.toFixed(1)+'s）', 'ok');
+      }
+      break;
+    }
+    case 'notice': log('⚠ '+ev.text, 'warn'); break;
+    case 'error':
+      log('✗ '+ev.text, 'err');
+      if (curPhase === 'download'){
+        setRowFail('rowDown', ev.text); setStep(2,'error'); $('mDown').textContent='—';
+      } else if (curPhase === 'upload'){
+        setRowFail('rowUp', ev.text); setStep(3,'error'); $('mUp').textContent='—';
+        // 上传失败后仪表盘回到下行结果，而不是停在 0
+        if (lastDown > 0){ bigActive(); setTarget(lastDown, '#5be9a0'); }
+      }
+      break;
+    case 'verdict':
+      setRow('rowVerdict', ev.pct.toFixed(0)+'% — '+ev.text);
+      break;
+    case 'done': {
+      const rep = ev.report || {};
+      const upSrv = rep.upload_server && rep.upload_server.host;
+      if (upSrv) $('mUp').title = '上传节点：'+upSrv;
+      const final = lastDown || lastUp;
+      if (final > 0){ bigActive(); setTarget(final, '#5be9a0'); }
+      else if (shown === 0){ bigIdle('—'); }
+      $('phaseLabel').textContent = '完成';
+      setChip('完成','done');
+      break;
+    }
+  }
+}
+
+async function start(){
+  const btn = $('startBtn');
+  btn.disabled = true; btn.textContent = '测试中…';
+  resetUI();
+  try{
+    const res = await fetch('/api/run', {method:'POST'});
+    if (!res.ok){ log(await res.text(), 'err'); return; }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true){
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0){
+        const line = buf.slice(0, i); buf = buf.slice(i+1);
+        if (line.trim()) { try { handle(JSON.parse(line)); } catch(e){} }
+      }
+    }
+  }catch(e){
+    log('连接中断: '+e.message, 'err');
+  }finally{
+    // 服务端提前结束（取消/异常）时也要恢复按钮，避免卡在「测试中…」
+    btn.disabled = false; btn.textContent = '再测一次';
+  }
+}
+
+draw();
+loadWifi();
+$('startBtn').addEventListener('click', start);
+</script>
+</body>
+</html>
